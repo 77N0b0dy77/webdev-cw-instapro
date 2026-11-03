@@ -1,4 +1,4 @@
-import { getPosts } from "./api.js";
+
 import { renderAddPostPageComponent } from "./components/add-post-page-component.js";
 import { renderAuthPageComponent } from "./components/auth-page-component.js";
 import {
@@ -15,14 +15,14 @@ import {
   removeUserFromLocalStorage,
   saveUserToLocalStorage,
 } from "./helpers.js";
+import { getPosts, createPost } from "./api.js";
 
 export let user = getUserFromLocalStorage();
 export let page = null;
 export let posts = [];
 
 const getToken = () => {
-  const token = user ? `Bearer ${user.token}` : undefined;
-  return token;
+  return user ? `Bearer ${user.token}` : undefined;
 };
 
 export const logout = () => {
@@ -32,11 +32,11 @@ export const logout = () => {
 };
 
 /**
- * Включает страницу приложения
+ * Переключение страниц приложения
  */
 export const goToPage = (newPage, data) => {
   if (
-    [
+    ![
       POSTS_PAGE,
       AUTH_PAGE,
       ADD_POSTS_PAGE,
@@ -44,47 +44,56 @@ export const goToPage = (newPage, data) => {
       LOADING_PAGE,
     ].includes(newPage)
   ) {
-    if (newPage === ADD_POSTS_PAGE) {
-      /* Если пользователь не авторизован, то отправляем его на страницу авторизации перед добавлением поста */
-      page = user ? ADD_POSTS_PAGE : AUTH_PAGE;
-      return renderApp();
-    }
-
-    if (newPage === POSTS_PAGE) {
-      page = LOADING_PAGE;
-      renderApp();
-
-      return getPosts({ token: getToken() })
-        .then((newPosts) => {
-          page = POSTS_PAGE;
-          posts = newPosts;
-          renderApp();
-        })
-        .catch((error) => {
-          console.error(error);
-          goToPage(POSTS_PAGE);
-        });
-    }
-
-    if (newPage === USER_POSTS_PAGE) {
-      // @@TODO: реализовать получение постов юзера из API
-      console.log("Открываю страницу пользователя: ", data.userId);
-      page = USER_POSTS_PAGE;
-      posts = [];
-      return renderApp();
-    }
-
-    page = newPage;
-    renderApp();
-
-    return;
+    throw new Error("Страницы не существует");
   }
 
-  throw new Error("страницы не существует");
+  // Страница добавления поста
+  if (newPage === ADD_POSTS_PAGE) {
+    page = user ? ADD_POSTS_PAGE : AUTH_PAGE;
+    return renderApp();
+  }
+
+  // Главная страница с постами
+  if (newPage === POSTS_PAGE) {
+    page = LOADING_PAGE;
+    renderApp();
+
+    return getPosts({ token: getToken() })
+      .then((newPosts) => {
+        posts = newPosts;
+        page = POSTS_PAGE;
+        renderApp();
+      })
+      .catch((error) => {
+        console.error("Ошибка загрузки постов:", error);
+
+        posts = [];
+        page = POSTS_PAGE;
+        renderApp();
+
+        alert("Не удалось загрузить посты: " + error.message);
+      });
+  }
+
+  // Страница постов пользователя
+  if (newPage === USER_POSTS_PAGE) {
+    console.log("Открываю страницу пользователя:", data?.userId);
+
+    page = USER_POSTS_PAGE;
+    posts = [];
+    return renderApp();
+  }
+
+  page = newPage;
+  renderApp();
 };
 
+/**
+ * Отрисовка текущей страницы
+ */
 const renderApp = () => {
   const appEl = document.getElementById("app");
+
   if (page === LOADING_PAGE) {
     return renderLoadingPageComponent({
       appEl,
@@ -109,10 +118,20 @@ const renderApp = () => {
   if (page === ADD_POSTS_PAGE) {
     return renderAddPostPageComponent({
       appEl,
+
       onAddPostClick({ description, imageUrl }) {
-        // @TODO: реализовать добавление поста в API
-        console.log("Добавляю пост...", { description, imageUrl });
-        goToPage(POSTS_PAGE);
+        return createPost({
+          description,
+          imageUrl,
+          token: getToken(),
+        })
+          .then(() => {
+            return goToPage(POSTS_PAGE);
+          })
+          .catch((error) => {
+            console.error("Ошибка добавления поста:", error);
+            alert(error.message);
+          });
       },
     });
   }
@@ -124,10 +143,10 @@ const renderApp = () => {
   }
 
   if (page === USER_POSTS_PAGE) {
-    // @TODO: реализовать страницу с фотографиями отдельного пользвателя
     appEl.innerHTML = "Здесь будет страница фотографий пользователя";
     return;
   }
 };
 
+// Запуск приложения
 goToPage(POSTS_PAGE);

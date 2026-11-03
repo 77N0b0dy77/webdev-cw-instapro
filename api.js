@@ -1,7 +1,7 @@
 // Замени на свой, чтобы получить независимый от других набор данных.
 // "боевая" версия инстапро лежит в ключе prod
 const personalKey = "prod";
-const baseHost = "https://webdev-hw-api.vercel.app";
+const baseHost = "https://wedev-api.sky.pro";
 const postsHost = `${baseHost}/api/v1/${personalKey}/instapro`;
 
 export function getPosts({ token }) {
@@ -11,14 +11,13 @@ export function getPosts({ token }) {
       Authorization: token,
     },
   })
-    .then((response) => {
-      if (response.status === 401) {
-        throw new Error("Нет авторизации");
+    .then(async (response) => {
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Ошибка загрузки постов");
       }
 
-      return response.json();
-    })
-    .then((data) => {
       return data.posts;
     });
 }
@@ -65,5 +64,26 @@ export function uploadImage({ file }) {
     body: data,
   }).then((response) => {
     return response.json();
+  });
+}
+
+export function createPost({ description, imageUrl, token }) {
+  return fetch(postsHost, {
+    method: "POST",
+    headers: {
+      Authorization: token,
+    },
+    body: JSON.stringify({
+      description,
+      imageUrl,
+    }),
+  }).then(async (response) => {
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Не удалось добавить пост");
+    }
+
+    return data;
   });
 }
