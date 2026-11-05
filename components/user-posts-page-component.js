@@ -1,3 +1,4 @@
+import { POSTS_PAGE } from "../routes.js";
 import { renderHeaderComponent } from "./header-component.js";
 
 // Экранирование HTML-символов.
@@ -53,6 +54,7 @@ export function renderUserPostsPageComponent({
     posts,
     onLikeClick,
     isLikePending,
+    goToPage,
 }) {
     const postsHtml = posts.length
         ? posts.map((post) => {
@@ -165,6 +167,13 @@ export function renderUserPostsPageComponent({
         <div class="page-container">
             <div class="header-container"></div>
 
+            <button
+                type="button"
+                class="back-to-posts-button"
+            >
+                ← На главную
+            </button>
+
             <ul class="posts">
                 ${postsHtml}
             </ul>
@@ -173,6 +182,15 @@ export function renderUserPostsPageComponent({
 
     renderHeaderComponent({
         element: appEl.querySelector(".header-container"),
+    });
+
+    // Возвращение к общей ленте.
+    const backButton = appEl.querySelector(
+        ".back-to-posts-button"
+    );
+
+    backButton.addEventListener("click", () => {
+        goToPage(POSTS_PAGE);
     });
 
     // Обработка нажатия на лайк.

@@ -37,6 +37,10 @@ export let posts = [];
 // ID постов, для которых сейчас выполняется запрос лайка
 const pendingLikeIds = new Set();
 
+const isLikePending = (postId) => {
+    return pendingLikeIds.has(String(postId));
+};
+
 const getToken = () => {
     return user ? `Bearer ${user.token}` : undefined;
 };
@@ -227,16 +231,15 @@ const renderApp = () => {
     }
 
     // Лента конкретного пользователя
-    if (page === USER_POSTS_PAGE) {
-        return renderUserPostsPageComponent({
-            appEl,
-            posts,
-            onLikeClick,
-            isLikePending: (postId) => {
-                return pendingLikeIds.has(String(postId));
-            },
-        });
-    }
+if (page === USER_POSTS_PAGE) {
+    return renderUserPostsPageComponent({
+        appEl,
+        posts,
+        onLikeClick,
+        isLikePending,
+        goToPage,
+    });
+}
 };
 
 // Запуск приложения
