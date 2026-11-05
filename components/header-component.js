@@ -1,40 +1,51 @@
 import { goToPage, logout, user } from "../index.js";
 import { ADD_POSTS_PAGE, AUTH_PAGE, POSTS_PAGE } from "../routes.js";
 
+// Экранирование специальных HTML-символов.
+const escapeHtml = (value) => {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => {
+    const entities = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+
+    return entities[char];
+  });
+};
+
 /**
  * Компонент заголовка страницы.
- * Этот компонент отображает шапку страницы с логотипом, кнопкой добавления постов/входа и кнопкой выхода (если пользователь авторизован).
- * 
- * @param {HTMLElement} params.element - HTML-элемент, в который будет рендериться заголовок.
- * @returns {HTMLElement} Возвращает элемент заголовка после рендеринга.
+ *
+ * @param {HTMLElement} params.element - HTML-элемент заголовка.
+ * @returns {HTMLElement} Возвращает элемент после рендеринга.
  */
 export function renderHeaderComponent({ element }) {
-  /**
-   * Рендерит содержимое заголовка.
-   */
+  const safeUserName = escapeHtml(user?.name);
+
   element.innerHTML = `
-  <div class="page-header">
+    <div class="page-header">
       <h1 class="logo">instapro</h1>
+
       <button class="header-button add-or-login-button">
-      ${
-        user
-          ? `<div title="Добавить пост" class="add-post-sign"></div>`
-          : "Войти"
-      }
+        ${
+          user
+            ? '<div title="Добавить пост" class="add-post-sign"></div>'
+            : "Войти"
+        }
       </button>
+
       ${
         user
-          ? `<button title="${user.name}" class="header-button logout-button">Выйти</button>`
+          ? `<button title="${safeUserName}" class="header-button logout-button">Выйти</button>`
           : ""
-      }  
-  </div>
+      }
+    </div>
   `;
 
-  /**
-   * Обработчик клика по кнопке "Добавить пост"/"Войти".
-   * Если пользователь авторизован, перенаправляет на страницу добавления постов.
-   * Если пользователь не авторизован, перенаправляет на страницу авторизации.
-   */
+  // Добавить пост или перейти на страницу авторизации.
   element
     .querySelector(".add-or-login-button")
     .addEventListener("click", () => {
@@ -45,19 +56,15 @@ export function renderHeaderComponent({ element }) {
       }
     });
 
-  /**
-   * Обработчик клика по логотипу.
-   * Перенаправляет на страницу с постами.
-   */
+  // Возврат в общую ленту по клику на логотип.
   element.querySelector(".logo").addEventListener("click", () => {
     goToPage(POSTS_PAGE);
   });
 
-  /**
-   * Обработчик клика по кнопке "Выйти".
-   * Если кнопка существует (т.е. пользователь авторизован), вызывает функцию `logout`.
-   */
-  element.querySelector(".logout-button")?.addEventListener("click", logout);
+  // Выход из аккаунта.
+  element
+    .querySelector(".logout-button")
+    ?.addEventListener("click", logout);
 
   return element;
 }

@@ -1,7 +1,47 @@
 import { renderHeaderComponent } from "./header-component.js";
 
+// Экранирование HTML-символов.
+const escapeHtml = (value) => {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => {
+        const entities = {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+        };
+
+        return entities[char];
+    });
+};
+
+// Проверка URL изображения.
+const getSafeImageUrl = (value) => {
+    if (typeof value !== "string" || !value.trim()) {
+        return "";
+    }
+
+    try {
+        const url = new URL(value);
+
+        if (url.protocol !== "https:") {
+            return "";
+        }
+
+        return url.href;
+    } catch {
+        return "";
+    }
+};
+
 function formatDate(dateString) {
-    return new Date(dateString).toLocaleDateString("ru-RU", {
+    const date = new Date(dateString);
+
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+
+    return date.toLocaleDateString("ru-RU", {
         day: "numeric",
         month: "long",
         year: "numeric",
@@ -15,66 +55,110 @@ export function renderUserPostsPageComponent({
     isLikePending,
 }) {
     const postsHtml = posts.length
-        ? posts.map((post) => `
-            <li class="post">
+        ? posts.map((post) => {
+            const userName = escapeHtml(post.user?.name);
 
-                <div class="post-header">
-                    <img
-                        class="post-header__user-image"
-                        src="${post.user.imageUrl}"
-                        alt="Аватар пользователя"
-                    />
+            const userImage = getSafeImageUrl(
+                post.user?.imageUrl
+            );
 
-                    <p class="post-header__user-name">
-                        ${post.user.name}
+            const postImage = getSafeImageUrl(
+                post.imageUrl
+            );
+
+            const description = escapeHtml(
+                post.description
+            );
+
+            const postId = escapeHtml(post.id);
+            const isLiked = Boolean(post.isLiked);
+
+            const likesCount = Array.isArray(post.likes)
+                ? post.likes.length
+                : 0;
+
+            const isPending = isLikePending
+                ? isLikePending(post.id)
+                : false;
+
+            return `
+                <li class="post">
+
+                    <div class="post-header">
+
+                        ${
+                            userImage
+                                ? `
+                                    <img
+                                        class="post-header__user-image"
+                                        src="${escapeHtml(userImage)}"
+                                        alt="Аватар пользователя"
+                                    />
+                                `
+                                : ""
+                        }
+
+                        <p class="post-header__user-name">
+                            ${userName}
+                        </p>
+
+                    </div>
+
+                    ${
+                        postImage
+                            ? `
+                                <img
+                                    class="post-image"
+                                    src="${escapeHtml(postImage)}"
+                                    alt="${description}"
+                                />
+                            `
+                            : ""
+                    }
+
+                    <div class="post-likes">
+
+                        <button
+                            type="button"
+                            class="like-button"
+                            data-post-id="${postId}"
+                            data-is-liked="${isLiked}"
+                            ${isPending ? "disabled" : ""}
+                        >
+                            <img
+                                src="./assets/images/${
+                                    isLiked
+                                        ? "like-active.svg"
+                                        : "like-not-active.svg"
+                                }"
+                                alt="Лайк"
+                            />
+                        </button>
+
+                        <p class="post-likes-text">
+                            Нравится:
+                            <strong>${likesCount}</strong>
+                        </p>
+
+                    </div>
+
+                    <p class="post-text">
+
+                        <span class="post-text__user-name">
+                            ${userName}
+                        </span>
+
+                        ${description}
+
                     </p>
-                </div>
 
-                <img
-                    class="post-image"
-                    src="${post.imageUrl}"
-                    alt="Изображение публикации"
-                />
-
-                <div class="post-likes">
-
-                    <button
-                        class="like-button"
-                        data-post-id="${post.id}"
-                        data-is-liked="${post.isLiked}"
-                        ${isLikePending(post.id) ? "disabled" : ""}
-                    >
-                        <img
-                            src="./assets/images/${
-                                post.isLiked
-                                    ? "like-active.svg"
-                                    : "like-not-active.svg"
-                            }"
-                            alt="Лайк"
-                        />
-                    </button>
-
-                    <p class="post-likes-text">
-                        Нравится:
-                        <strong>${post.likes.length}</strong>
+                    <p class="post-date">
+                        ${escapeHtml(formatDate(post.createdAt))}
                     </p>
 
-                </div>
-
-                <p class="post-text">
-                    <span class="post-text__user-name">
-                        ${post.user.name}
-                    </span>
-
-                    ${post.description}
-                </p>
-
-                <p class="post-date">
-                    ${formatDate(post.createdAt)}
-                </p>
-
-            </li>
-        `).join("")
+                </li>
+            `;
+        }).join("")
         : "<p>У пользователя пока нет публикаций</p>";
 
     appEl.innerHTML = `
@@ -88,11 +172,11 @@ export function renderUserPostsPageComponent({
     `;
 
     renderHeaderComponent({
-        element: document.querySelector(".header-container"),
+        element: appEl.querySelector(".header-container"),
     });
 
-    // Обработка нажатия на лайк
-    for (const likeButton of document.querySelectorAll(".like-button")) {
+    // Обработка нажатия на лайк.
+    for (const likeButton of appEl.querySelectorAll(".like-button")) {
         likeButton.addEventListener("click", (event) => {
             event.stopPropagation();
 
