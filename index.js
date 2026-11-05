@@ -10,11 +10,7 @@ import {
 } from "./routes.js";
 
 import { renderPostsPageComponent } from "./components/posts-page-component.js";
-
-import {
-    renderUserPostsPageComponent,
-} from "./components/user-posts-page-component.js";
-
+import { renderUserPostsPageComponent } from "./components/user-posts-page-component.js";
 import { renderLoadingPageComponent } from "./components/loading-page-component.js";
 
 import {
@@ -28,24 +24,41 @@ import {
     getUserPosts,
     createPost,
     togglePostLike,
+    deletePost,
 } from "./api.js";
 
 export let user = getUserFromLocalStorage();
 export let page = null;
 export let posts = [];
 
-// ID постов, для которых сейчас выполняется запрос лайка
 const pendingLikeIds = new Set();
+const pendingDeleteIds = new Set();
+
+let currentUserPostsId = null;
+
+// ID пользователя: в объекте авторизации используется _id.
+const getCurrentUserId = () => {
+    return user?._id ?? user?.id;
+};
+
+// ID автора публикации.
+const getPostAuthorId = (post) => {
+    return post.user?.id ?? post.user?._id;
+};
 
 const isLikePending = (postId) => {
     return pendingLikeIds.has(String(postId));
+};
+
+const isDeletePending = (postId) => {
+    return pendingDeleteIds.has(String(postId));
 };
 
 const getToken = () => {
     return user ? `Bearer ${user.token}` : undefined;
 };
 
-// Обработка нажатия на лайк
+// Обработка лайка.
 const onLikeClick = async ({ postId, isLiked }) => {
     if (!user) {
         alert("Чтобы ставить лайки, необходимо авторизоваться");
@@ -54,12 +67,10 @@ const onLikeClick = async ({ postId, isLiked }) => {
 
     const normalizedPostId = String(postId);
 
-    // Защита от повторного запроса для этого поста
     if (pendingLikeIds.has(normalizedPostId)) {
         return;
     }
 
-    // Блокируем кнопку до завершения запроса
     pendingLikeIds.add(normalizedPostId);
     renderApp();
 
@@ -81,8 +92,76 @@ const onLikeClick = async ({ postId, isLiked }) => {
         console.error("Ошибка при изменении лайка:", error);
         alert(error.message || "Не удалось изменить лайк");
     } finally {
-        // Разблокируем кнопку после завершения запроса
         pendingLikeIds.delete(normalizedPostId);
+        renderApp();
+    }
+};
+
+// Удаление публикации.
+const onDeletePost = async ({ postId }) => {
+    if (!user) {
+        alert("Чтобы удалять публикации, необходимо авторизоваться");
+        return;
+    }
+
+    const post = posts.find(
+        (item) => String(item.id) === String(postId)
+    );
+
+    if (!post) {
+        alert("Публикация не найдена");
+        return;
+    }
+
+    const currentUserId = getCurrentUserId();
+    const authorId = getPostAuthorId(post);
+
+    // Удалять можно только собственные публикации.
+    if (
+        !currentUserId ||
+        String(authorId) !== String(currentUserId)
+    ) {
+        alert("Вы можете удалять только собственные публикации");
+        return;
+    }
+
+    const normalizedPostId = String(postId);
+
+    if (pendingDeleteIds.has(normalizedPostId)) {
+        return;
+    }
+
+    const confirmed = confirm(
+        "Вы действительно хотите удалить эту публикацию? Это действие нельзя отменить."
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    pendingDeleteIds.add(normalizedPostId);
+    renderApp();
+
+    try {
+        await deletePost({
+            postId,
+            token: getToken(),
+        });
+
+        alert("Публикация успешно удалена");
+
+        if (page === USER_POSTS_PAGE && currentUserPostsId) {
+            await goToPage(USER_POSTS_PAGE, {
+                userId: currentUserPostsId,
+            });
+        } else {
+            await goToPage(POSTS_PAGE);
+        }
+    } catch (error) {
+        console.error("Ошибка удаления публикации:", error);
+        alert(error.message || "Не удалось удалить публикацию");
+    } finally {
+        pendingDeleteIds.delete(normalizedPostId);
         renderApp();
     }
 };
@@ -94,7 +173,7 @@ export const logout = () => {
 };
 
 /**
- * Переключение страниц приложения
+ * Переключение страниц приложения.
  */
 export const goToPage = (newPage, data) => {
     if (
@@ -109,14 +188,14 @@ export const goToPage = (newPage, data) => {
         throw new Error("Страницы не существует");
     }
 
-    // Страница добавления поста
     if (newPage === ADD_POSTS_PAGE) {
         page = user ? ADD_POSTS_PAGE : AUTH_PAGE;
         return renderApp();
     }
 
-    // Главная страница с постами
+    // Общая лента.
     if (newPage === POSTS_PAGE) {
+        currentUserPostsId = null;
         page = LOADING_PAGE;
         renderApp();
 
@@ -137,11 +216,13 @@ export const goToPage = (newPage, data) => {
             });
     }
 
-    // Страница постов конкретного пользователя
+    // Лента конкретного пользователя.
     if (newPage === USER_POSTS_PAGE) {
         if (!data?.userId) {
             throw new Error("Не указан ID пользователя");
         }
+
+        currentUserPostsId = String(data.userId);
 
         page = LOADING_PAGE;
         renderApp();
@@ -171,7 +252,7 @@ export const goToPage = (newPage, data) => {
 };
 
 /**
- * Отрисовка текущей страницы
+ * Отрисовка текущей страницы.
  */
 const renderApp = () => {
     const appEl = document.getElementById("app");
@@ -219,28 +300,32 @@ const renderApp = () => {
         });
     }
 
-    // Общая лента
+    // Общая лента.
     if (page === POSTS_PAGE) {
         return renderPostsPageComponent({
             appEl,
             onLikeClick,
-            isLikePending: (postId) => {
-                return pendingLikeIds.has(String(postId));
-            },
+            isLikePending,
+            onDeletePost,
+            isDeletePending,
+            currentUserId: getCurrentUserId(),
         });
     }
 
-    // Лента конкретного пользователя
-if (page === USER_POSTS_PAGE) {
-    return renderUserPostsPageComponent({
-        appEl,
-        posts,
-        onLikeClick,
-        isLikePending,
-        goToPage,
-    });
-}
+    // Лента конкретного пользователя.
+    if (page === USER_POSTS_PAGE) {
+        return renderUserPostsPageComponent({
+            appEl,
+            posts,
+            onLikeClick,
+            isLikePending,
+            onDeletePost,
+            isDeletePending,
+            currentUserId: getCurrentUserId(),
+            goToPage,
+        });
+    }
 };
 
-// Запуск приложения
+// Запуск приложения.
 goToPage(POSTS_PAGE);

@@ -25,7 +25,7 @@ export function getUserPosts({ userId, token }) {
         throw new Error("Не передан ID пользователя");
     }
 
-    const url = `${postsHost}/user-posts/${userId}`;
+    const url = `${postsHost}/user-posts/${encodeURIComponent(userId)}`;
 
     return fetch(url, {
         method: "GET",
@@ -112,7 +112,7 @@ export function createPost({ description, imageUrl, token }) {
 // Поставить или убрать лайк
 export const togglePostLike = async ({ postId, token, isLiked }) => {
     const response = await fetch(
-        `${postsHost}/${postId}/${isLiked ? "dislike" : "like"}`,
+        `${postsHost}/${encodeURIComponent(postId)}/${isLiked ? "dislike" : "like"}`,
         {
             method: "POST",
             headers: {
@@ -128,7 +128,7 @@ export const togglePostLike = async ({ postId, token, isLiked }) => {
             const data = await response.json();
             errorMessage = data.error || errorMessage;
         } catch (error) {
-            // Если сервер не вернул JSON, используем стандартное сообщение
+            // Если сервер не вернул JSON, используем стандартное сообщение.
         }
 
         throw new Error(errorMessage);
@@ -136,4 +136,41 @@ export const togglePostLike = async ({ postId, token, isLiked }) => {
 
     const data = await response.json();
     return data.post;
+};
+
+// Удалить публикацию
+export const deletePost = async ({ postId, token }) => {
+    if (!postId) {
+        throw new Error("Не указан ID публикации");
+    }
+
+    if (!token) {
+        throw new Error("Для удаления публикации необходимо авторизоваться");
+    }
+
+    const response = await fetch(
+        `${postsHost}/${encodeURIComponent(postId)}`,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: token,
+            },
+        }
+    );
+
+    let data = {};
+
+    try {
+        data = await response.json();
+    } catch (error) {
+        // Некоторые ответы сервера могут быть без JSON.
+    }
+
+    if (!response.ok) {
+        throw new Error(
+            data.error || `Не удалось удалить публикацию. Ошибка: ${response.status}`
+        );
+    }
+
+    return data;
 };

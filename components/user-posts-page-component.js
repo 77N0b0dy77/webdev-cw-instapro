@@ -1,7 +1,6 @@
 import { POSTS_PAGE } from "../routes.js";
 import { renderHeaderComponent } from "./header-component.js";
 
-// Экранирование HTML-символов.
 const escapeHtml = (value) => {
     return String(value ?? "").replace(/[&<>"']/g, (char) => {
         const entities = {
@@ -16,7 +15,6 @@ const escapeHtml = (value) => {
     });
 };
 
-// Проверка URL изображения.
 const getSafeImageUrl = (value) => {
     if (typeof value !== "string" || !value.trim()) {
         return "";
@@ -54,6 +52,9 @@ export function renderUserPostsPageComponent({
     posts,
     onLikeClick,
     isLikePending,
+    onDeletePost,
+    isDeletePending,
+    currentUserId,
     goToPage,
 }) {
     const postsHtml = posts.length
@@ -79,15 +80,23 @@ export function renderUserPostsPageComponent({
                 ? post.likes.length
                 : 0;
 
-            const isPending = isLikePending
+            const likePending = isLikePending
                 ? isLikePending(post.id)
+                : false;
+
+            const authorId = post.user?.id ?? post.user?._id;
+
+            const isOwner =
+                currentUserId &&
+                String(authorId) === String(currentUserId);
+
+            const deletePending = isDeletePending
+                ? isDeletePending(post.id)
                 : false;
 
             return `
                 <li class="post">
-
                     <div class="post-header">
-
                         ${
                             userImage
                                 ? `
@@ -103,7 +112,6 @@ export function renderUserPostsPageComponent({
                         <p class="post-header__user-name">
                             ${userName}
                         </p>
-
                     </div>
 
                     ${
@@ -119,13 +127,12 @@ export function renderUserPostsPageComponent({
                     }
 
                     <div class="post-likes">
-
                         <button
                             type="button"
                             class="like-button"
                             data-post-id="${postId}"
                             data-is-liked="${isLiked}"
-                            ${isPending ? "disabled" : ""}
+                            ${likePending ? "disabled" : ""}
                         >
                             <img
                                 src="./assets/images/${
@@ -141,23 +148,37 @@ export function renderUserPostsPageComponent({
                             Нравится:
                             <strong>${likesCount}</strong>
                         </p>
-
                     </div>
 
                     <p class="post-text">
-
                         <span class="post-text__user-name">
                             ${userName}
                         </span>
-
                         ${description}
-
                     </p>
 
                     <p class="post-date">
                         ${escapeHtml(formatDate(post.createdAt))}
                     </p>
 
+                    ${
+                        isOwner
+                            ? `
+                                <button
+                                    type="button"
+                                    class="delete-post-button"
+                                    data-post-id="${postId}"
+                                    ${deletePending ? "disabled" : ""}
+                                >
+                                    ${
+                                        deletePending
+                                            ? "Удаление..."
+                                            : "Удалить публикацию"
+                                    }
+                                </button>
+                            `
+                            : ""
+                    }
                 </li>
             `;
         }).join("")
@@ -184,7 +205,6 @@ export function renderUserPostsPageComponent({
         element: appEl.querySelector(".header-container"),
     });
 
-    // Возвращение к общей ленте.
     const backButton = appEl.querySelector(
         ".back-to-posts-button"
     );
@@ -193,7 +213,6 @@ export function renderUserPostsPageComponent({
         goToPage(POSTS_PAGE);
     });
 
-    // Обработка нажатия на лайк.
     for (const likeButton of appEl.querySelectorAll(".like-button")) {
         likeButton.addEventListener("click", (event) => {
             event.stopPropagation();
@@ -205,6 +224,20 @@ export function renderUserPostsPageComponent({
             onLikeClick({
                 postId: likeButton.dataset.postId,
                 isLiked: likeButton.dataset.isLiked === "true",
+            });
+        });
+    }
+
+    for (const deleteButton of appEl.querySelectorAll(".delete-post-button")) {
+        deleteButton.addEventListener("click", (event) => {
+            event.stopPropagation();
+
+            if (deleteButton.disabled) {
+                return;
+            }
+
+            onDeletePost({
+                postId: deleteButton.dataset.postId,
             });
         });
     }
