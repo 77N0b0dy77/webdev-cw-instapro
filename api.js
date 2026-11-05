@@ -1,5 +1,3 @@
-// Замени на свой, чтобы получить независимый от других набор данных.
-// "боевая" версия инстапро лежит в ключе prod
 const personalKey = "prod";
 const baseHost = "https://wedev-api.sky.pro";
 const postsHost = `${baseHost}/api/v1/${personalKey}/instapro`;
@@ -10,16 +8,39 @@ export function getPosts({ token }) {
     headers: {
       Authorization: token,
     },
-  })
-    .then(async (response) => {
-      const data = await response.json();
+  }).then(async (response) => {
+    const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || "Ошибка загрузки постов");
-      }
+    if (!response.ok) {
+      throw new Error(data.error || "Ошибка загрузки постов");
+    }
 
-      return data.posts;
-    });
+    return data.posts;
+  });
+}
+
+// Получение постов конкретного пользователя
+export function getUserPosts({ userId, token }) {
+  if (!userId) {
+    throw new Error("Не передан ID пользователя");
+  }
+
+  const url = `${postsHost}/user-posts/${userId}`;
+
+  console.log("Запрос постов пользователя:", url);
+
+  return fetch(url, {
+    method: "GET",
+    headers: token ? { Authorization: token } : {},
+  }).then(async (response) => {
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || `Ошибка сервера: ${response.status}`);
+    }
+
+    return data.posts;
+  });
 }
 
 export function registerUser({ login, password, name, imageUrl }) {
@@ -54,7 +75,7 @@ export function loginUser({ login, password }) {
   });
 }
 
-// Загружает картинку в облако, возвращает url загруженной картинки
+// Загружает картинку в облако
 export function uploadImage({ file }) {
   const data = new FormData();
   data.append("file", file);

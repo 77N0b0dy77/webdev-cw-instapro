@@ -1,6 +1,6 @@
-
 import { renderAddPostPageComponent } from "./components/add-post-page-component.js";
 import { renderAuthPageComponent } from "./components/auth-page-component.js";
+
 import {
   ADD_POSTS_PAGE,
   AUTH_PAGE,
@@ -8,14 +8,21 @@ import {
   POSTS_PAGE,
   USER_POSTS_PAGE,
 } from "./routes.js";
+
 import { renderPostsPageComponent } from "./components/posts-page-component.js";
+
+import {
+  renderUserPostsPageComponent,
+} from "./components/user-posts-page-component.js";
 import { renderLoadingPageComponent } from "./components/loading-page-component.js";
+
 import {
   getUserFromLocalStorage,
   removeUserFromLocalStorage,
   saveUserToLocalStorage,
 } from "./helpers.js";
-import { getPosts, createPost } from "./api.js";
+
+import { getPosts, getUserPosts, createPost } from "./api.js";
 
 export let user = getUserFromLocalStorage();
 export let page = null;
@@ -75,13 +82,33 @@ export const goToPage = (newPage, data) => {
       });
   }
 
-  // Страница постов пользователя
+  // Страница постов конкретного пользователя
   if (newPage === USER_POSTS_PAGE) {
-    console.log("Открываю страницу пользователя:", data?.userId);
+    if (!data?.userId) {
+      throw new Error("Не указан ID пользователя");
+    }
 
-    page = USER_POSTS_PAGE;
-    posts = [];
-    return renderApp();
+    page = LOADING_PAGE;
+    renderApp();
+
+    return getUserPosts({
+      userId: data.userId,
+      token: getToken(),
+    })
+      .then((newPosts) => {
+        posts = newPosts;
+        page = USER_POSTS_PAGE;
+        renderApp();
+      })
+      .catch((error) => {
+        console.error("Ошибка загрузки постов пользователя:", error);
+
+        posts = [];
+        page = USER_POSTS_PAGE;
+        renderApp();
+
+        alert("Не удалось загрузить посты пользователя: " + error.message);
+      });
   }
 
   page = newPage;
@@ -131,6 +158,7 @@ const renderApp = () => {
           .catch((error) => {
             console.error("Ошибка добавления поста:", error);
             alert(error.message);
+            throw error;
           });
       },
     });
@@ -142,9 +170,12 @@ const renderApp = () => {
     });
   }
 
+  // Отрисовка страницы конкретного пользователя
   if (page === USER_POSTS_PAGE) {
-    appEl.innerHTML = "Здесь будет страница фотографий пользователя";
-    return;
+    return renderUserPostsPageComponent({
+      appEl,
+      posts,
+    });
   }
 };
 
