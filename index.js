@@ -1,133 +1,331 @@
-import { getPosts } from "./api.js";
 import { renderAddPostPageComponent } from "./components/add-post-page-component.js";
 import { renderAuthPageComponent } from "./components/auth-page-component.js";
+
 import {
-  ADD_POSTS_PAGE,
-  AUTH_PAGE,
-  LOADING_PAGE,
-  POSTS_PAGE,
-  USER_POSTS_PAGE,
+    ADD_POSTS_PAGE,
+    AUTH_PAGE,
+    LOADING_PAGE,
+    POSTS_PAGE,
+    USER_POSTS_PAGE,
 } from "./routes.js";
+
 import { renderPostsPageComponent } from "./components/posts-page-component.js";
+import { renderUserPostsPageComponent } from "./components/user-posts-page-component.js";
 import { renderLoadingPageComponent } from "./components/loading-page-component.js";
+
 import {
-  getUserFromLocalStorage,
-  removeUserFromLocalStorage,
-  saveUserToLocalStorage,
+    getUserFromLocalStorage,
+    removeUserFromLocalStorage,
+    saveUserToLocalStorage,
 } from "./helpers.js";
+
+import {
+    getPosts,
+    getUserPosts,
+    createPost,
+    togglePostLike,
+    deletePost,
+} from "./api.js";
 
 export let user = getUserFromLocalStorage();
 export let page = null;
 export let posts = [];
 
+const pendingLikeIds = new Set();
+const pendingDeleteIds = new Set();
+
+let currentUserPostsId = null;
+
+// ID пользователя: в объекте авторизации используется _id.
+const getCurrentUserId = () => {
+    return user?._id ?? user?.id;
+};
+
+// ID автора публикации.
+const getPostAuthorId = (post) => {
+    return post.user?.id ?? post.user?._id;
+};
+
+const isLikePending = (postId) => {
+    return pendingLikeIds.has(String(postId));
+};
+
+const isDeletePending = (postId) => {
+    return pendingDeleteIds.has(String(postId));
+};
+
 const getToken = () => {
-  const token = user ? `Bearer ${user.token}` : undefined;
-  return token;
+    return user ? `Bearer ${user.token}` : undefined;
+};
+
+// Обработка лайка.
+const onLikeClick = async ({ postId, isLiked }) => {
+    if (!user) {
+        alert("Чтобы ставить лайки, необходимо авторизоваться");
+        return;
+    }
+
+    const normalizedPostId = String(postId);
+
+    if (pendingLikeIds.has(normalizedPostId)) {
+        return;
+    }
+
+    pendingLikeIds.add(normalizedPostId);
+    renderApp();
+
+    try {
+        const updatedPost = await togglePostLike({
+            postId,
+            token: getToken(),
+            isLiked,
+        });
+
+        const postIndex = posts.findIndex(
+            (post) => String(post.id) === String(updatedPost.id)
+        );
+
+        if (postIndex !== -1) {
+            posts[postIndex] = updatedPost;
+        }
+    } catch (error) {
+        console.error("Ошибка при изменении лайка:", error);
+        alert(error.message || "Не удалось изменить лайк");
+    } finally {
+        pendingLikeIds.delete(normalizedPostId);
+        renderApp();
+    }
+};
+
+// Удаление публикации.
+const onDeletePost = async ({ postId }) => {
+    if (!user) {
+        alert("Чтобы удалять публикации, необходимо авторизоваться");
+        return;
+    }
+
+    const post = posts.find(
+        (item) => String(item.id) === String(postId)
+    );
+
+    if (!post) {
+        alert("Публикация не найдена");
+        return;
+    }
+
+    const currentUserId = getCurrentUserId();
+    const authorId = getPostAuthorId(post);
+
+    // Удалять можно только собственные публикации.
+    if (
+        !currentUserId ||
+        String(authorId) !== String(currentUserId)
+    ) {
+        alert("Вы можете удалять только собственные публикации");
+        return;
+    }
+
+    const normalizedPostId = String(postId);
+
+    if (pendingDeleteIds.has(normalizedPostId)) {
+        return;
+    }
+
+    const confirmed = confirm(
+        "Вы действительно хотите удалить эту публикацию? Это действие нельзя отменить."
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    pendingDeleteIds.add(normalizedPostId);
+    renderApp();
+
+    try {
+        await deletePost({
+            postId,
+            token: getToken(),
+        });
+
+        alert("Публикация успешно удалена");
+
+        if (page === USER_POSTS_PAGE && currentUserPostsId) {
+            await goToPage(USER_POSTS_PAGE, {
+                userId: currentUserPostsId,
+            });
+        } else {
+            await goToPage(POSTS_PAGE);
+        }
+    } catch (error) {
+        console.error("Ошибка удаления публикации:", error);
+        alert(error.message || "Не удалось удалить публикацию");
+    } finally {
+        pendingDeleteIds.delete(normalizedPostId);
+        renderApp();
+    }
 };
 
 export const logout = () => {
-  user = null;
-  removeUserFromLocalStorage();
-  goToPage(POSTS_PAGE);
+    user = null;
+    removeUserFromLocalStorage();
+    goToPage(POSTS_PAGE);
 };
 
 /**
- * Включает страницу приложения
+ * Переключение страниц приложения.
  */
 export const goToPage = (newPage, data) => {
-  if (
-    [
-      POSTS_PAGE,
-      AUTH_PAGE,
-      ADD_POSTS_PAGE,
-      USER_POSTS_PAGE,
-      LOADING_PAGE,
-    ].includes(newPage)
-  ) {
+    if (
+        ![
+            POSTS_PAGE,
+            AUTH_PAGE,
+            ADD_POSTS_PAGE,
+            USER_POSTS_PAGE,
+            LOADING_PAGE,
+        ].includes(newPage)
+    ) {
+        throw new Error("Страницы не существует");
+    }
+
     if (newPage === ADD_POSTS_PAGE) {
-      /* Если пользователь не авторизован, то отправляем его на страницу авторизации перед добавлением поста */
-      page = user ? ADD_POSTS_PAGE : AUTH_PAGE;
-      return renderApp();
+        page = user ? ADD_POSTS_PAGE : AUTH_PAGE;
+        return renderApp();
     }
 
+    // Общая лента.
     if (newPage === POSTS_PAGE) {
-      page = LOADING_PAGE;
-      renderApp();
+        currentUserPostsId = null;
+        page = LOADING_PAGE;
+        renderApp();
 
-      return getPosts({ token: getToken() })
-        .then((newPosts) => {
-          page = POSTS_PAGE;
-          posts = newPosts;
-          renderApp();
-        })
-        .catch((error) => {
-          console.error(error);
-          goToPage(POSTS_PAGE);
-        });
+        return getPosts({ token: getToken() })
+            .then((newPosts) => {
+                posts = newPosts;
+                page = POSTS_PAGE;
+                renderApp();
+            })
+            .catch((error) => {
+                console.error("Ошибка загрузки постов:", error);
+
+                posts = [];
+                page = POSTS_PAGE;
+                renderApp();
+
+                alert("Не удалось загрузить посты: " + error.message);
+            });
     }
 
+    // Лента конкретного пользователя.
     if (newPage === USER_POSTS_PAGE) {
-      // @@TODO: реализовать получение постов юзера из API
-      console.log("Открываю страницу пользователя: ", data.userId);
-      page = USER_POSTS_PAGE;
-      posts = [];
-      return renderApp();
+        if (!data?.userId) {
+            throw new Error("Не указан ID пользователя");
+        }
+
+        currentUserPostsId = String(data.userId);
+
+        page = LOADING_PAGE;
+        renderApp();
+
+        return getUserPosts({
+            userId: data.userId,
+            token: getToken(),
+        })
+            .then((newPosts) => {
+                posts = newPosts;
+                page = USER_POSTS_PAGE;
+                renderApp();
+            })
+            .catch((error) => {
+                console.error("Ошибка загрузки постов пользователя:", error);
+
+                posts = [];
+                page = USER_POSTS_PAGE;
+                renderApp();
+
+                alert("Не удалось загрузить посты пользователя: " + error.message);
+            });
     }
 
     page = newPage;
     renderApp();
-
-    return;
-  }
-
-  throw new Error("страницы не существует");
 };
 
+/**
+ * Отрисовка текущей страницы.
+ */
 const renderApp = () => {
-  const appEl = document.getElementById("app");
-  if (page === LOADING_PAGE) {
-    return renderLoadingPageComponent({
-      appEl,
-      user,
-      goToPage,
-    });
-  }
+    const appEl = document.getElementById("app");
 
-  if (page === AUTH_PAGE) {
-    return renderAuthPageComponent({
-      appEl,
-      setUser: (newUser) => {
-        user = newUser;
-        saveUserToLocalStorage(user);
-        goToPage(POSTS_PAGE);
-      },
-      user,
-      goToPage,
-    });
-  }
+    if (page === LOADING_PAGE) {
+        return renderLoadingPageComponent({
+            appEl,
+            user,
+            goToPage,
+        });
+    }
 
-  if (page === ADD_POSTS_PAGE) {
-    return renderAddPostPageComponent({
-      appEl,
-      onAddPostClick({ description, imageUrl }) {
-        // @TODO: реализовать добавление поста в API
-        console.log("Добавляю пост...", { description, imageUrl });
-        goToPage(POSTS_PAGE);
-      },
-    });
-  }
+    if (page === AUTH_PAGE) {
+        return renderAuthPageComponent({
+            appEl,
+            setUser: (newUser) => {
+                user = newUser;
+                saveUserToLocalStorage(user);
+                goToPage(POSTS_PAGE);
+            },
+            user,
+            goToPage,
+        });
+    }
 
-  if (page === POSTS_PAGE) {
-    return renderPostsPageComponent({
-      appEl,
-    });
-  }
+    if (page === ADD_POSTS_PAGE) {
+        return renderAddPostPageComponent({
+            appEl,
 
-  if (page === USER_POSTS_PAGE) {
-    // @TODO: реализовать страницу с фотографиями отдельного пользвателя
-    appEl.innerHTML = "Здесь будет страница фотографий пользователя";
-    return;
-  }
+            onAddPostClick({ description, imageUrl }) {
+                return createPost({
+                    description,
+                    imageUrl,
+                    token: getToken(),
+                })
+                    .then(() => {
+                        return goToPage(POSTS_PAGE);
+                    })
+                    .catch((error) => {
+                        console.error("Ошибка добавления поста:", error);
+                        alert(error.message);
+                        throw error;
+                    });
+            },
+        });
+    }
+
+    // Общая лента.
+    if (page === POSTS_PAGE) {
+        return renderPostsPageComponent({
+            appEl,
+            onLikeClick,
+            isLikePending,
+            onDeletePost,
+            isDeletePending,
+            currentUserId: getCurrentUserId(),
+        });
+    }
+
+    // Лента конкретного пользователя.
+    if (page === USER_POSTS_PAGE) {
+        return renderUserPostsPageComponent({
+            appEl,
+            posts,
+            onLikeClick,
+            isLikePending,
+            onDeletePost,
+            isDeletePending,
+            currentUserId: getCurrentUserId(),
+            goToPage,
+        });
+    }
 };
 
+// Запуск приложения.
 goToPage(POSTS_PAGE);
